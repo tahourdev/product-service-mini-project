@@ -12,7 +12,7 @@ pipeline {
     GITOPS_URL            = 'https://github.com/tahourdev/Jenkins-ArgoCD-GitOps.git'
     GITOPS_BRANCH         = 'main'
     DEV_VALUES_FILE       = 'manifests/spring-jpa-helm/values-dev.yaml'
-    GITOPS_CREDENTIALS_ID = 'github-jenkins-token'   // PAT with Contents: Read & write
+    GITOPS_CREDENTIALS_ID = 'github-jenkins-token-tahourdev'   // PAT with Contents: Read & write
 
     // ---- Commit identity for GitOps changes ----
     GIT_USER_NAME         = 'tahourdev'
