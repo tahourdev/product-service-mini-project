@@ -8,7 +8,7 @@ pipeline {
     BASE_VERSION              = '1.0'
 
     // ---- GitOps (manifests) repo (Helm chart + values files) ----
-    // Use your GitOps repo here (matches your logs):
+    // Use the GitOps repo you showed in the logs:
     GITOPS_URL            = 'https://github.com/tahourdev/Jenkins-ArgoCD-GitOps.git'
     GITOPS_BRANCH         = 'main'
     DEV_VALUES_FILE       = 'manifests/spring-jpa-helm/values-dev.yaml'
@@ -72,31 +72,32 @@ pipeline {
           usernameVariable: 'GIT_USER',
           passwordVariable: 'GIT_TOKEN'
         )]) {
+          // NOTE: single-quoted Groovy string to avoid Groovy interpolation.
+          // Inside the shell, we use double quotes for credential.helper so $GIT_USER/$GIT_TOKEN expand safely.
           sh '''
             set -e
 
-            # start clean each run
             rm -rf gitops-tmp
 
-            # secure clone using a throwaway credential helper (no token in logs)
-            git -c credential.helper='!f() { echo username='${GIT_USER}'; echo password='${GIT_TOKEN}'; }; f' \
-                clone "${GITOPS_URL}" -b "${GITOPS_BRANCH}" gitops-tmp
+            # Secure clone using a throwaway credential helper (no token in URL/logs)
+            git -c credential.helper="!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f" \
+                clone "$GITOPS_URL" -b "$GITOPS_BRANCH" gitops-tmp
 
             cd gitops-tmp
-            git config user.name  "${GIT_USER_NAME}"
-            git config user.email "${GIT_USER_EMAIL}"
+            git config user.name  "$GIT_USER_NAME"
+            git config user.email "$GIT_USER_EMAIL"
 
-            echo "📝 Updating image tag in ${DEV_VALUES_FILE} -> ${IMAGE_TAG}"
+            echo "📝 Updating image tag in $DEV_VALUES_FILE -> $IMAGE_TAG"
 
-            # update `tag:` line (keeps YAML formatting simple)
-            sed -i -E "s#(^\\s*tag:\\s*).*$#\\1 \\\"${IMAGE_TAG}\\\"#" "${DEV_VALUES_FILE}"
+            # Replace the tag line:  tag: "OLD"  -->  tag: "NEW"
+            sed -i -E "s#(^\\s*tag:\\s*).*$#\\1\\\"$IMAGE_TAG\\\"#" "$DEV_VALUES_FILE"
 
-            git add "${DEV_VALUES_FILE}"
-            git commit -m "ci(dev): bump image to ${DOCKER_HUB_REPO}:${IMAGE_TAG}" || echo "Nothing to commit"
+            git add "$DEV_VALUES_FILE"
+            git commit -m "ci(dev): bump image to $DOCKER_HUB_REPO:$IMAGE_TAG" || echo "Nothing to commit"
 
-            # push back using same credential helper
-            git -c credential.helper='!f() { echo username='${GIT_USER}'; echo password='${GIT_TOKEN}'; }; f' \
-                push origin HEAD:"${GITOPS_BRANCH}"
+            # Push back using the same credential helper
+            git -c credential.helper="!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f" \
+                push origin HEAD:"$GITOPS_BRANCH"
           '''
         }
       }
