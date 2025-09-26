@@ -86,8 +86,8 @@ pipeline {
 
             echo "📝 Updating image tag in $DEV_VALUES_FILE -> $IMAGE_TAG"
 
-            # ✅ Correct sed command
-            sed -i -E "s#(^\\s*tag:\\s*).*\$#\\1\\\"$IMAGE_TAG\\\"#" "$DEV_VALUES_FILE"
+            # ✅ Correct sed command with dynamic IMAGE_TAG variable
+            sed -i -E 's#(^\\s*tag:\\s*).*#\\1"'$IMAGE_TAG'"#' "$DEV_VALUES_FILE"
 
             echo "✅ File updated. Here's the result:"
             grep 'tag:' "$DEV_VALUES_FILE"
