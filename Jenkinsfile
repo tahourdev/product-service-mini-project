@@ -12,7 +12,7 @@ pipeline {
     GITOPS_BRANCH         = 'main'
     GITOPS_DIR            = 'gitops-tmp'
     DEV_VALUES_FILE       = 'manifests/spring-jpa-helm/values-dev.yaml'
-    GITOPS_CREDENTIALS_ID = 'github-jenkins-token-tahourdev'
+    GITOPS_CREDENTIALS_ID = 'github-jenkins-tahourdev'
 
     // ---- Git commit identity ----
     GIT_USER_NAME         = 'tahourdev'
