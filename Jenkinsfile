@@ -7,14 +7,13 @@ pipeline {
     DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
     BASE_VERSION              = '1.0'
 
-    // ---- GitOps (manifests) repo (Helm chart + values files) ----
-    // Use the GitOps repo you showed in the logs:
+    // ---- GitOps repo (Helm chart + values files) ----
     GITOPS_URL            = 'https://github.com/tahourdev/Jenkins-ArgoCD-GitOps.git'
     GITOPS_BRANCH         = 'main'
     DEV_VALUES_FILE       = 'manifests/spring-jpa-helm/values-dev.yaml'
-    GITOPS_CREDENTIALS_ID = 'github-jenkins-token-tahourdev'   // PAT with Contents: Read & write
+    GITOPS_CREDENTIALS_ID = 'github-jenkins-token-tahourdev'
 
-    // ---- Commit identity for GitOps changes ----
+    // ---- Git commit identity ----
     GIT_USER_NAME         = 'tahourdev'
     GIT_USER_EMAIL        = 'enghourheng26@gmail.com'
   }
@@ -22,7 +21,9 @@ pipeline {
   stages {
 
     stage('Checkout app') {
-      steps { checkout scm }
+      steps {
+        checkout scm
+      }
     }
 
     stage('Build Spring Boot') {
@@ -38,7 +39,7 @@ pipeline {
     stage('Build & Push image') {
       steps {
         script {
-          def shortSha = sh(returnStdout:true, script:"git rev-parse --short HEAD").trim()
+          def shortSha = sh(returnStdout: true, script: "git rev-parse --short HEAD").trim()
           def imageTag = "${BASE_VERSION}.${env.BUILD_NUMBER}-${shortSha}"
           env.IMAGE_TAG = imageTag
 
@@ -72,14 +73,12 @@ pipeline {
           usernameVariable: 'GIT_USER',
           passwordVariable: 'GIT_TOKEN'
         )]) {
-          // NOTE: single-quoted Groovy string to avoid Groovy interpolation.
-          // Inside the shell, we use double quotes for credential.helper so $GIT_USER/$GIT_TOKEN expand safely.
           sh '''
             set -e
 
+            echo "📁 Cloning GitOps repo: $GITOPS_URL"
             rm -rf gitops-tmp
 
-            # Secure clone using a throwaway credential helper (no token in URL/logs)
             git -c credential.helper="!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f" \
                 clone "$GITOPS_URL" -b "$GITOPS_BRANCH" gitops-tmp
 
@@ -89,13 +88,15 @@ pipeline {
 
             echo "📝 Updating image tag in $DEV_VALUES_FILE -> $IMAGE_TAG"
 
-            # Replace the tag line:  tag: "OLD"  -->  tag: "NEW"
-            sed -i -E "s#(^\\s*tag:\\s*).*$#\\1\\\"$IMAGE_TAG\\\"#" "$DEV_VALUES_FILE"
+            # Safely replace the tag line in values-dev.yaml
+            sed -i -E "s#(^\\s*tag:\\s*).*\$#\\1\\\"$IMAGE_TAG\\\"#" "$DEV_VALUES_FILE"
+
+            echo "📄 File content after update:"
+            cat "$DEV_VALUES_FILE"
 
             git add "$DEV_VALUES_FILE"
             git commit -m "ci(dev): bump image to $DOCKER_HUB_REPO:$IMAGE_TAG" || echo "Nothing to commit"
 
-            # Push back using the same credential helper
             git -c credential.helper="!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f" \
                 push origin HEAD:"$GITOPS_BRANCH"
           '''
