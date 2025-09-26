@@ -1,172 +1,103 @@
-// @Library("Shared") _
-
-// pipeline {
-//     agent { label "agent-2" }
-
-//     environment {
-//         DOCKERHUB_REPO = "keanghor31/spring-app01"
-//         IMAGE_TAG = "v1.0.${BUILD_NUMBER ?: 'latest'}"
-//         CONTAINER_NAME = "spring-app01-api"
-//     }
-
-//     stages {
-
-//         stage("Code") {
-//             steps {
-//                 script {
-//                     clone("https://github.com/tahourdev/JPA-hibernetes-01.git", "main")
-//                 }
-//             }
-//         }
-        
-//         // stage("Build Docker Image") {
-//         //     steps {
-//         //         script {
-//         //             def imageFull = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
-//         //             echo "🔧 Building Docker image: ${imageFull}"
-//         //             sh "docker build -t ${imageFull} ."
-//         //         }
-//         //     }
-//         // }
-
-//         stage("Build Docker Image") {
-//             steps {
-//                 script {
-//                     docker_build("${DOCKERHUB_REPO}", "${IMAGE_TAG}")
-//                 }
-//             }
-//         }
-
-//         // stage("Push to DockerHub") {
-//         //     steps {
-//         //         script {
-//         //             def imageFull = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
-//         //             echo "📦 Tagging and pushing Docker image to DockerHub..."
-
-//         //             withCredentials([
-//         //                 usernamePassword(
-//         //                     credentialsId: 'docker-hub-credentials',
-//         //                     usernameVariable: 'DOCKERHUB_USER',
-//         //                     passwordVariable: 'DOCKERHUB_PASS'
-//         //                 )
-//         //             ]) {
-//         //                 sh """
-//         //                     echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin
-//         //                     docker push ${imageFull}
-//         //                     docker logout
-//         //                 """
-//         //             }
-//         //         }
-//         //     }
-//         // }
-
-//         stage("Push to DockerHub") {
-//             steps {
-//                 script {
-//                     docker_push("${DOCKERHUB_REPO}", "${IMAGE_TAG}")
-//                 }
-//             }
-//         }
-
-//         // stage("Deploy with Docker Compose") {
-//         //     steps {
-//         //         script {
-//         //             def imageFull = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
-//         //             echo "🚀 Checking current deployment state..."
-
-//         //             sh """
-//         //                 CURRENT_IMAGE=\$(docker inspect --format='{{.Config.Image}}' $CONTAINER_NAME 2>/dev/null || true)
-//         //                 EXPECTED_IMAGE="${imageFull}"
-
-//         //                 if [ "\$CURRENT_IMAGE" = "\$EXPECTED_IMAGE" ]; then
-//         //                     echo "✅ Container '$CONTAINER_NAME' is already running with image '\$EXPECTED_IMAGE'. Skipping deployment."
-//         //                 else
-//         //                     echo "📦 Current image: '\$CURRENT_IMAGE'"
-//         //                     echo "📦 Expected image: '\$EXPECTED_IMAGE'"
-//         //                     echo "🔄 Deploying container using Docker Compose..."
-//         //                     docker compose down || true
-//         //                     docker compose up -d
-//         //                 fi
-//         //             """
-//         //         }
-//         //     }
-//         // }
-//     }
-
-//     post {
-//         success {
-//             script {
-//                 def imageFull = "${DOCKERHUB_REPO}:${IMAGE_TAG}"
-//                 echo "✅ Successfully built, pushed image, and deployed if needed: ${imageFull}"
-//             }
-//         }
-//         failure {
-//             echo "❌ Pipeline failed."
-//         }
-//     }
-// }
-
-@Library("Shared") _
-
 pipeline {
-    agent { label "agent-2" }
+  agent { label "agent-2" }
 
-    environment {
-        DOCKERHUB_REPO = "keanghor31/spring-app01"
-        IMAGE_TAG = "v1.0.${BUILD_NUMBER ?: 'latest'}"
+  environment {
+    DOCKER_HUB_REPO           = 'keanghor31/spring-app01'
+    DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
+
+    GITOPS_URL            = 'https://github.com/tahourdev/Jenkins-ArgoCD-GitOps.git'
+    GITOPS_BRANCH         = 'main'
+    GITOPS_CREDENTIALS_ID = 'github-jenkins-tahourdev'
+    DEV_VALUES_FILE       = 'manifests/spring-jpa-helm/values-dev.yaml'
+
+    BASE_VERSION          = '1.0'
+    GIT_USER_NAME         = 'tahourdev'
+    GIT_USER_EMAIL        = 'enghourheng26@gmail.com'
+  }
+
+  stages {
+    stage('Checkout') { steps { checkout scm } }
+
+    stage('Build Spring Boot') {
+      steps {
+        sh '''
+          chmod +x ./gradlew || true
+          ./gradlew clean build -x test
+        '''
+      }
     }
 
-    stages {
-        stage("Code") {
-            steps {
-                script {
-                    clone("https://github.com/tahourdev/JPA-hibernetes-01.git", "main")
-                }
-            }
-        }
+    stage('Build & Push Image') {
+      steps {
+        script {
+          def shortSha = sh(returnStdout:true, script:"git rev-parse --short HEAD").trim()
+          def imageTag = "${BASE_VERSION}.${env.BUILD_NUMBER}-${shortSha}"
+          env.IMAGE_TAG = imageTag
 
-        stage("Build Docker Image") {
-            steps {
-                script {
-                    def parts = DOCKERHUB_REPO.tokenize('/')
-                    docker_build([
-                        dockerhubUser: parts[0],
-                        appName: parts[1],
-                        tag: IMAGE_TAG
-                    ])
-                }
-            }
+          def img = docker.build("${DOCKER_HUB_REPO}:${imageTag}")
+          docker.withRegistry('', "${DOCKER_HUB_CREDENTIALS_ID}") {
+            img.push("${imageTag}")
+            img.push("latest")
+          }
         }
-
-        stage("Push to DockerHub") {
-            steps {
-                script {
-                    def parts = DOCKERHUB_REPO.tokenize('/')
-                    docker_push([
-                        dockerhubUser: parts[0],
-                        appName: parts[1],
-                        tag: IMAGE_TAG
-                    ])
-                }
-            }
-        }
-
-        // stage("Deploy") {
-        //     steps {
-        //         script {
-        //             echo "🚀 Deploying application..."
-        //             sh "docker compose up -d"
-        //         }
-        //     }
-        // }
+      }
     }
 
-    post {
-        success {
-            echo "✅ Deployment completed."
-        }
-        failure {
-            echo "❌ Pipeline failed."
-        }
+    stage('Trivy Scan') {
+      steps {
+        sh '''
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image \
+            --severity HIGH,CRITICAL --no-progress --format table \
+            -o trivy-scan-report.txt "$DOCKER_HUB_REPO:$IMAGE_TAG" || echo "Trivy scan failed but continuing..."
+        '''
+      }
     }
+
+    stage('Bump Helm values-dev.yaml') {
+      steps {
+        dir('gitops-tmp') {
+          withCredentials([usernamePassword(
+            credentialsId: "${GITOPS_CREDENTIALS_ID}",
+            usernameVariable: 'GIT_USER',
+            passwordVariable: 'GIT_TOKEN'
+          )]) {
+            sh '''
+              set -e
+              git init
+              git config user.name  "$GIT_USER_NAME"
+              git config user.email "$GIT_USER_EMAIL"
+              git -c credential.helper='!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f' \
+                  remote add origin "$GITOPS_URL"
+              git fetch origin "$GITOPS_BRANCH"
+              git checkout -b work "origin/$GITOPS_BRANCH"
+
+              echo "📝 Updating tag in $DEV_VALUES_FILE -> $IMAGE_TAG"
+              sed -i -E "s#(^\\s*tag:\\s*).*$#\\1 \\\"$IMAGE_TAG\\\"#" "$DEV_VALUES_FILE"
+
+              git add "$DEV_VALUES_FILE"
+              git commit -m "ci(dev): bump image to $DOCKER_HUB_REPO:$IMAGE_TAG" || echo "Nothing to commit"
+
+              git -c credential.helper='!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f' \
+                  push origin HEAD:"$GITOPS_BRANCH"
+            '''
+          }
+        }
+      }
+    }
+
+    stage('(Info) Argo CD auto-sync') {
+      steps { echo '🧠 Argo CD will detect the commit and roll out dev automatically.' }
+    }
+  }
+
+  post {
+    success {
+      echo '✅ CI done: image pushed & Helm values-dev.yaml updated.'
+      archiveArtifacts artifacts: 'trivy-scan-report.txt', allowEmptyArchive: true
+    }
+    failure {
+      echo '❌ Pipeline failed.'
+      archiveArtifacts artifacts: 'trivy-scan-report.txt', allowEmptyArchive: true
+    }
+  }
 }
