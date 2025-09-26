@@ -2,15 +2,20 @@ pipeline {
   agent { label "agent-2" }
 
   environment {
+    // Docker Hub
     DOCKER_HUB_REPO           = 'keanghor31/spring-app01'
     DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
 
+    // GitOps (Helm chart repo)
     GITOPS_URL            = 'https://github.com/tahourdev/Jenkins-ArgoCD-GitOps.git'
     GITOPS_BRANCH         = 'main'
-    GITOPS_CREDENTIALS_ID = 'github-jenkins-tahourdev'
+    GITOPS_CREDENTIALS_ID = 'github-jenkins-token'
     DEV_VALUES_FILE       = 'manifests/spring-jpa-helm/values-dev.yaml'
 
+    // Versioning
     BASE_VERSION          = '1.0'
+
+    // Git identity for commits
     GIT_USER_NAME         = 'tahourdev'
     GIT_USER_EMAIL        = 'enghourheng26@gmail.com'
   }
@@ -34,7 +39,10 @@ pipeline {
           def imageTag = "${BASE_VERSION}.${env.BUILD_NUMBER}-${shortSha}"
           env.IMAGE_TAG = imageTag
 
+          echo "📦 Building ${DOCKER_HUB_REPO}:${imageTag}"
           def img = docker.build("${DOCKER_HUB_REPO}:${imageTag}")
+
+          echo "🚀 Pushing image to Docker Hub"
           docker.withRegistry('', "${DOCKER_HUB_CREDENTIALS_ID}") {
             img.push("${imageTag}")
             img.push("latest")
@@ -66,17 +74,25 @@ pipeline {
               git init
               git config user.name  "$GIT_USER_NAME"
               git config user.email "$GIT_USER_EMAIL"
+
+              # Add remote with credentials
               git -c credential.helper='!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f' \
                   remote add origin "$GITOPS_URL"
+
               git fetch origin "$GITOPS_BRANCH"
-              git checkout -b work "origin/$GITOPS_BRANCH"
+
+              # ✅ Proper checkout (fix)
+              git checkout -b work origin/$GITOPS_BRANCH
 
               echo "📝 Updating tag in $DEV_VALUES_FILE -> $IMAGE_TAG"
+
+              # Replace image tag line
               sed -i -E "s#(^\\s*tag:\\s*).*$#\\1 \\\"$IMAGE_TAG\\\"#" "$DEV_VALUES_FILE"
 
               git add "$DEV_VALUES_FILE"
               git commit -m "ci(dev): bump image to $DOCKER_HUB_REPO:$IMAGE_TAG" || echo "Nothing to commit"
 
+              # Secure push
               git -c credential.helper='!f() { echo username=$GIT_USER; echo password=$GIT_TOKEN; }; f' \
                   push origin HEAD:"$GITOPS_BRANCH"
             '''
