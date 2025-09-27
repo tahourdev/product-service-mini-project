@@ -126,7 +126,7 @@ pipeline {
     agent any
     environment {
         DOCKER_REPO = 'keanghor31/spring-app01'
-        IMAGE_TAG = "v${BUILD_NUMBER}"  # Semantic versioning
+        IMAGE_TAG = "v${BUILD_NUMBER}" 
         GITOPS_REPO = 'https://github.com/tahourdev/gitops-spring-app.git'
         GITOPS_CREDENTIALS_ID = 'github-jenkins-tahourdev'
         DOCKER_CREDENTIALS_ID = 'docker-hub-credentials'
