@@ -177,8 +177,8 @@ pipeline {
       steps {
         dir('cd-repo') {
           sh '''
-            git config --global user.email "jenkins@local"
-            git config --global user.name  "Jenkins"
+            git config --global user.email "enghourheng26@gmail.com"
+            git config --global user.name  "tahourdev"
 
             # Clone Repo B with embedded credentials (HTTPS)
             CLONE_URL="${CD_REPO_URL#https://}"
