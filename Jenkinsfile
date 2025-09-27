@@ -123,61 +123,67 @@
 // }
 
 pipeline {
-    agent { label "agent-2" }
-    environment {
-        DOCKER_IMAGE = "keanghor31/spring-app01"
-        GIT_MANIFESTS_REPO = "https://github.com/tahourdev/k8s-manifests.git"
-        GIT_CREDENTIALS_ID = "github-jenkins-tahourdev"
-        DOCKER_CREDENTIALS_ID = "docker-hub-credentials"
+  agent { label "agent-2" }
+
+  environment {
+    DOCKER_IMAGE = "keanghor31/spring-app01"
+    GIT_MANIFESTS_REPO = "https://github.com/tahourdev/k8s-manifests.git"
+    GIT_CREDENTIALS_ID = "github-jenkins-tahourdev"
+    DOCKER_CREDENTIALS_ID = "docker-hub-credentials"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git url: 'https://github.com/tahourdev/product-service-mini-project.git', branch: 'main'
+      }
     }
-    stages {
-        stage('Checkout') {
-            steps {
-                git url: 'https://github.com/tahourdev/product-service-mini-project.git', branch: 'main'
-            }
-        }
-        stage('Build Spring Boot') {
-            steps {
-                sh 'mvn clean package -DskipTests'  // Skip tests for speed; add tests in production
-            }
-        }
-        stage('Build and Push Docker') {
-            steps {
-                script {
-                    def commitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                    def imageTag = "1.0.${BUILD_NUMBER}-${commitHash}"  // e.g., 1.0.3-abc123
-                    docker.build("${DOCKER_IMAGE}:${imageTag}", ".")
-                    docker.withRegistry('https://index.docker.io/v1/', DOCKER_CREDENTIALS_ID) {
-                        docker.image("${DOCKER_IMAGE}:${imageTag}").push()
-                        docker.image("${DOCKER_IMAGE}:${imageTag}").push('latest')  // Optional
-                    }
-                    env.IMAGE_TAG = imageTag
-                }
-            }
-        }
-        stage('Update Manifests') {
-            steps {
-                script {
-                    // Clone manifests repo
-                    dir('manifests') {
-                        git url: GIT_MANIFESTS_REPO, branch: 'main', credentialsId: GIT_CREDENTIALS_ID
-                        // Update image tag in app-deployment.yaml
-                        sh """
-                        sed -i 's|image: ${DOCKER_IMAGE}:.*|image: ${DOCKER_IMAGE}:${IMAGE_TAG}|g' spring-app/app-deployment.yaml
-                        git config user.name 'tahourdev'
-                        git config user.email 'enghourheng26@gmail.com'
-                        git add spring-app/app-deployment.yaml
-                        git commit -m 'Update image tag to ${IMAGE_TAG}'
-                        git push origin main
-                        """
-                    }
-                }
-            }
-        }
+
+    stage('Build Spring Boot (Maven via Docker)') {
+      steps {
+        sh 'docker run --rm -v $PWD:/app -w /app maven:3.9.6-openjdk-17 mvn clean package -DskipTests'
+      }
     }
-    post {
-        always {
-            cleanWs()
+
+    stage('Build and Push Docker') {
+      steps {
+        script {
+          def commitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+          def imageTag = "1.0.${BUILD_NUMBER}-${commitHash}"
+          docker.build("${DOCKER_IMAGE}:${imageTag}", ".")
+          docker.withRegistry('https://index.docker.io/v1/', DOCKER_CREDENTIALS_ID) {
+            docker.image("${DOCKER_IMAGE}:${imageTag}").push()
+            docker.image("${DOCKER_IMAGE}:${imageTag}").push('latest')
+          }
+          env.IMAGE_TAG = imageTag
         }
+      }
     }
+
+    stage('Update Manifests') {
+      steps {
+        script {
+          dir('manifests') {
+            git url: GIT_MANIFESTS_REPO, branch: 'main', credentialsId: GIT_CREDENTIALS_ID
+
+            sh """
+            sed -i 's|image: ${DOCKER_IMAGE}:.*|image: ${DOCKER_IMAGE}:${IMAGE_TAG}|g' spring-app/app-deployment.yaml
+            git config user.name 'tahourdev'
+            git config user.email 'enghourheng26@gmail.com'
+            git add spring-app/app-deployment.yaml
+            git commit -m 'Update image tag to ${IMAGE_TAG}' || echo 'No changes to commit'
+            git push origin main
+            """
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      cleanWs()
+    }
+  }
 }
+
