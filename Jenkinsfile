@@ -126,7 +126,7 @@ pipeline {
     agent any
     environment {
         DOCKER_REPO = 'keanghor31/spring-app01'
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE_TAG = "v${BUILD_NUMBER}"  # Semantic versioning
         GITOPS_REPO = 'https://github.com/tahourdev/gitops-spring-app.git'
         GITOPS_CREDENTIALS_ID = 'github-jenkins-tahourdev'
         DOCKER_CREDENTIALS_ID = 'docker-hub-credentials'
@@ -158,10 +158,10 @@ pipeline {
             steps {
                 dir('gitops') {
                     git url: "${GITOPS_REPO}", credentialsId: "${GITOPS_CREDENTIALS_ID}", branch: 'main'
-                    sh "sed -i 's|image: ${DOCKER_REPO}:[0-9]*|image: ${DOCKER_REPO}:${IMAGE_TAG}|g' app-deployment.yaml || { echo 'Sed command failed'; exit 1; }"
+                    sh "sed -i 's|image: ${DOCKER_REPO}:[a-zA-Z0-9]*|image: ${DOCKER_REPO}:${IMAGE_TAG}|g' manifests/app-deployment.yaml || { echo 'Sed command failed'; exit 1; }"
                     sh 'git config user.email "enghourheng26@gmail.com"'
                     sh 'git config user.name "tahourdev"'
-                    sh 'git add app-deployment.yaml'
+                    sh 'git add manifests/app-deployment.yaml'
                     sh 'git commit -m "Update image to ${IMAGE_TAG}" || { echo "Git commit failed"; exit 1; }'
                     sh 'git push origin main || { echo "Git push failed"; exit 1; }'
                 }
@@ -172,7 +172,7 @@ pipeline {
         always {
             echo "Build completed. Checking artifacts..."
             sh 'docker images | grep ${DOCKER_REPO} || echo "No local images found"'
-            cleanWs()  # Clean workspace after logging
+            cleanWs()
         }
         failure {
             echo "Pipeline failed. Check the logs for details."
