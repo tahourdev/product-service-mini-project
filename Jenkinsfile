@@ -141,7 +141,7 @@ pipeline {
 
     stage('Build Spring Boot (Maven via Docker)') {
       steps {
-        sh 'docker run --rm -v $PWD:/app -w /app maven:3.9.6-openjdk-17 mvn clean package -DskipTests'
+        sh 'docker run --rm -v $PWD:/app -w /app maven:3.9-eclipse-temurin-17 mvn clean package -DskipTests'
       }
     }
 
@@ -186,4 +186,5 @@ pipeline {
     }
   }
 }
+
 
