@@ -123,7 +123,7 @@
 // }
 
 pipeline {
-    agent any
+    agent { label "agent-2" }
     environment {
         DOCKER_IMAGE = "keanghor31/spring-app01"
         GIT_MANIFESTS_REPO = "https://github.com/tahourdev/k8s-manifests.git"
