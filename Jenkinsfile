@@ -125,71 +125,59 @@
 pipeline {
     agent any
     environment {
-        // ---- Docker image settings ----
-        DOCKER_HUB_REPO           = 'keanghor31/spring-app01'
-        DOCKER_HUB_CREDENTIALS_ID = 'docker-hub-credentials'
-        BASE_VERSION              = '1.0'
-
-        // ---- GitOps repo (Helm values) ----
-        GITOPS_URL            = 'https://github.com/tahourdev/Jenkins-ArgoCD-GitOps.git'
-        GITOPS_BRANCH         = 'main'
-        GITOPS_DIR            = 'gitops-tmp'
-        DEV_VALUES_FILE       = 'manifests/spring-jpa-helm/values-dev.yaml'
-        GITOPS_CREDENTIALS_ID = 'github-jenkins-tahourdev'
-
-        // ---- Git commit identity ----
-        GIT_USER_NAME         = 'tahourdev'
-        GIT_USER_EMAIL        = 'enghourheng26@gmail.com'
-
-        // Computed image tag
-        IMAGE_TAG = "${BASE_VERSION}.${BUILD_NUMBER}"
+        DOCKER_IMAGE = "keanghor31/spring-app01"
+        GIT_MANIFESTS_REPO = "https://github.com/tahourdev/k8s-manifests.git"
+        GIT_CREDENTIALS_ID = "github-jenkins-tahourdev"
+        DOCKER_CREDENTIALS_ID = "docker-hub-credentials"
     }
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                git url: 'https://github.com/tahourdev/product-service-mini-project.git', branch: 'main'
             }
         }
-        stage('Build Spring Boot JAR') {
+        stage('Build Spring Boot') {
             steps {
-                sh 'cd src && ./mvnw clean package -DskipTests'  // Adjust for Gradle if needed
+                sh 'mvn clean package -DskipTests'  // Skip tests for speed; add tests in production
             }
         }
-        stage('Build and Push Docker Image') {
+        stage('Build and Push Docker') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh """
-                    docker build -t ${DOCKER_HUB_REPO}:${IMAGE_TAG} .
-                    docker tag ${DOCKER_HUB_REPO}:${IMAGE_TAG} ${DOCKER_HUB_REPO}:latest
-                    echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                    docker push ${DOCKER_HUB_REPO}:${IMAGE_TAG}
-                    docker push ${DOCKER_HUB_REPO}:latest
-                    """
+                script {
+                    def commitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    def imageTag = "1.0.${BUILD_NUMBER}-${commitHash}"  // e.g., 1.0.3-abc123
+                    docker.build("${DOCKER_IMAGE}:${imageTag}", ".")
+                    docker.withRegistry('https://index.docker.io/v1/', DOCKER_CREDENTIALS_ID) {
+                        docker.image("${DOCKER_IMAGE}:${imageTag}").push()
+                        docker.image("${DOCKER_IMAGE}:${imageTag}").push('latest')  // Optional
+                    }
+                    env.IMAGE_TAG = imageTag
                 }
             }
         }
-        stage('Update GitOps Repo') {
+        stage('Update Manifests') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${GITOPS_CREDENTIALS_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
-                    sh """
-                    git clone ${GITOPS_URL} ${GITOPS_DIR}
-                    cd ${GITOPS_DIR}
-                    sed -i "s/tag: \".*\"/tag: \"${IMAGE_TAG}\"/" ${DEV_VALUES_FILE}
-                    git config user.name "${GIT_USER_NAME}"
-                    git config user.email "${GIT_USER_EMAIL}"
-                    git add ${DEV_VALUES_FILE}
-                    git commit -m "Update image tag to ${IMAGE_TAG} for build ${BUILD_NUMBER}" || true
-                    git push https://${GIT_USER}:\${GIT_PASS}@github.com/tahourdev/Jenkins-ArgoCD-GitOps.git ${GITOPS_BRANCH}
-                    cd ..
-                    rm -rf ${GITOPS_DIR}
-                    """
+                script {
+                    // Clone manifests repo
+                    dir('manifests') {
+                        git url: GIT_MANIFESTS_REPO, branch: 'main', credentialsId: GIT_CREDENTIALS_ID
+                        // Update image tag in app-deployment.yaml
+                        sh """
+                        sed -i 's|image: ${DOCKER_IMAGE}:.*|image: ${DOCKER_IMAGE}:${IMAGE_TAG}|g' spring-app/app-deployment.yaml
+                        git config user.name 'tahourdev'
+                        git config user.email 'enghourheng26@gmail.com'
+                        git add spring-app/app-deployment.yaml
+                        git commit -m 'Update image tag to ${IMAGE_TAG}'
+                        git push origin main
+                        """
+                    }
                 }
             }
         }
     }
     post {
         always {
-            sh 'docker logout'
+            cleanWs()
         }
     }
 }
